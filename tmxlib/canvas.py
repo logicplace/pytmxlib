@@ -101,7 +101,7 @@ class Canvas(PilImage):
             alpha_channel = bands[3]
             alpha_channel = alpha_channel.point(
                 lambda x: int(x * opacity))
-            t_image = Image.merge('RGBA', bands[:3] + (alpha_channel, ))
+            t_image = Image.merge('RGBA', bands[:3] + (alpha_channel,))
             # Finally, blit it to the canvas
             self.pil_image = Image.alpha_composite(self.pil_image,
                                                    t_image)

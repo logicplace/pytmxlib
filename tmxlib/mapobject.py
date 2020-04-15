@@ -47,6 +47,10 @@ class MapObject(helpers.LayerElementMixin):
 
             Type of the object. A string (or unicode). No semantics attached.
 
+        .. attribute:: id
+
+            Unique numeric ID of the object.
+
     Other attributes:
 
         .. attribute:: objtype
@@ -72,25 +76,34 @@ class MapObject(helpers.LayerElementMixin):
         .. attribute:: pixel_x
         .. attribute:: pixel_y
     """
+    # XXX: Implement `id` -- "Even if an object is deleted, no object ever gets
+    # the same ID."
     pixel_x, pixel_y = helpers.unpacked_properties('pixel_pos')
 
-    def __init__(self, layer, pixel_pos, name=None, type=None):
+    def __init__(
+            self, layer, pixel_pos,
+            *,
+            name=None, type=None, id=None, template=None
+    ):
         self.layer = layer
         self.pixel_pos = pixel_pos
         self.name = name
         self.type = type
         self.properties = {}
+        self.id = id
+        self.template = template
 
     @property
     def pos(self):
         return (self.pixel_pos[0] / self.layer.map.tile_width,
                 self.pixel_pos[1] / self.layer.map.tile_height - 1)
+
     @pos.setter
     def pos(self, value):
         x, y = value
         y += 1
         self.pixel_pos = (x * self.layer.map.tile_width,
-                y * self.layer.map.tile_height)
+                          y * self.layer.map.tile_height)
 
     def to_dict(self, y=None):
         """Export to a dict compatible with Tiled's JSON plugin"""
@@ -132,9 +145,12 @@ class MapObject(helpers.LayerElementMixin):
 
 
 class PointBasedObject(MapObject):
-    def __init__(self, layer, pixel_pos, size=None, pixel_size=None, name=None,
-            type=None, points=()):
-        MapObject.__init__(self, layer, pixel_pos, name, type)
+    def __init__(
+        self, layer, pixel_pos,
+        *,
+        size=None, pixel_size=None, name=None, type=None, points=(), id=None,
+    ):
+        MapObject.__init__(self, layer, pixel_pos, name=name, type=type, id=id)
         self.points = list(points)
 
     @helpers.from_dict_method
@@ -184,9 +200,12 @@ class PolylineObject(PointBasedObject):
 
 
 class SizedObject(helpers.TileMixin, MapObject):
-    def __init__(self, layer, pixel_pos, size=None, pixel_size=None, name=None,
-            type=None):
-        MapObject.__init__(self, layer, pixel_pos, name, type)
+    def __init__(
+        self, layer, pixel_pos,
+        *,
+        size=None, pixel_size=None, name=None, type=None, id=None,
+    ):
+        MapObject.__init__(self, layer, pixel_pos, name=name, type=type, id=id)
         if pixel_size:
             if size:
                 raise ValueError('Cannot specify both size and pixel_size')
@@ -229,6 +248,12 @@ class SizedObject(helpers.TileMixin, MapObject):
         )
 
 
+
+class PointObject(PointBasedObject):
+    objtype = 'point'
+
+
+
 class RectangleObject(tile.TileLikeObject, SizedObject):
     """A rectangle object, either blank (sized) or a tile object
 
@@ -262,13 +287,18 @@ class RectangleObject(tile.TileLikeObject, SizedObject):
     shared with tiles.
     """
 
-    def __init__(self, layer, pixel_pos, size=None, pixel_size=None, name=None,
-            type=None, value=0):
+    def __init__(
+        self, layer, pixel_pos,
+        *,
+       size=None, pixel_size=None, name=None, type=None, value=0, id=None,
+    ):
         tile.TileLikeObject.__init__(self)
         self.layer = layer
         self.value = value
         SizedObject.__init__(
-            self, layer, pixel_pos, size, pixel_size, name, type)
+            self, layer, pixel_pos, size=size, pixel_size=pixel_size,
+            name=name, type=type, id=id,
+        )
 
     def __nonzero__(self):
         return True

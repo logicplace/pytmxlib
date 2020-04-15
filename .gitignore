@@ -6,3 +6,5 @@
 /*.egg/
 /.coverage
 /.tox/
+.idea/
+*.coverage

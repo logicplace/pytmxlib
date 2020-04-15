@@ -11,7 +11,7 @@ from tmxlib.tileset import ImageTileset, IndividualTileTileset, TilesetTile
 from tmxlib.tile import MapTile
 from tmxlib.layer import ImageLayer, ObjectLayer, TileLayer
 from tmxlib.mapobject import (PolygonObject, PolylineObject, RectangleObject,
-                              EllipseObject)
+                              EllipseObject, PointObject)
 from tmxlib import image
 from tmxlib import draw
 

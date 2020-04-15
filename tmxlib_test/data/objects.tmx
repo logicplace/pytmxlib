@@ -5,6 +5,7 @@
  </tileset>
  <objectgroup color="#ff0000" name="Objects" width="8" height="8">
   <object name="Rect" x="32" y="32" width="64" height="96"/>
+  <object name="FloatRect" x="32.5" y="32.5" width="64.5" height="96.5"/>
   <object name="Ellipse" x="128" y="32" width="96" height="64">
    <ellipse/>
   </object>
@@ -13,7 +14,7 @@
    <polygon points="0,0 64,0 64,96 32,64 0,96"/>
   </object>
   <object name="Handle" x="128" y="160">
-   <polyline points="-32,0 64,0 128,0"/>
+   <polyline points="-32,0 64.5,0.5 128,0"/>
   </object>
  </objectgroup>
 </map>

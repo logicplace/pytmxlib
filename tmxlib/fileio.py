@@ -13,12 +13,16 @@ import functools
 from weakref import WeakValueDictionary
 import sys
 import warnings
+import csv
+import copy
 
 import six
 try:
+    # noinspection PyPackageRequirements
     from lxml import etree
     have_lxml = True
 except ImportError:  # pragma: no cover
+    # noinspection PyPep8Naming
     from xml.etree import ElementTree as etree
     have_lxml = False
     warnings.warn(ImportWarning('lxml is recommended'))
@@ -35,6 +39,9 @@ class ReadWriteBase(object):
 
         :arg filename: The file from which to load
 
+        :arg serializer:
+        :arg base_path:
+
         :arg shared: Objects loaded from a single file with `shared=True` will
             be reused.
             Modifications to this shared object will, naturally, be visible
@@ -42,27 +49,41 @@ class ReadWriteBase(object):
             (External tilesets are loaded as `shared` by default.)
         """
         serializer = serializer_getdefault(serializer)
+        # noinspection PyUnresolvedReferences
         return serializer.open(cls, cls._rw_obj_type, filename, base_path,
                 shared)
 
     @classmethod
-    def load(cls, string, serializer=None, base_path=None):
+    def load(cls, string, serializer=None, base_path=None, options=None):
         """Load an object of this class from a string.
 
         :arg string:
             String containing the XML description of the object, as it would be
             read from a file.
+
+        :arg serializer:
+        :arg base_path:
+
+        :arg options:
+            An option dictionary of options to respect when loading the tmx.
+
+            Currently supported options:
+                None
         """
         serializer = serializer_getdefault(serializer)
-        return serializer.load(cls, cls._rw_obj_type, string, base_path)
+        # noinspection PyUnresolvedReferences
+        return serializer.load(cls, cls._rw_obj_type, string, base_path, options)
 
     def save(self, filename, serializer=None, base_path=None):
         """Save this object to a file
 
+        :arg base_path:
+        :arg serializer:
         :arg filename:
             Name of the file to save to.
         """
         serializer = serializer_getdefault(serializer, self)
+        # noinspection PyUnresolvedReferences
         return serializer.save(self, self._rw_obj_type, filename, base_path)
 
     def dump(self, serializer=None, base_path=None):
@@ -73,6 +94,7 @@ class ReadWriteBase(object):
             writing to a file.
         """
         serializer = serializer_getdefault(serializer, self)
+        # noinspection PyUnresolvedReferences
         return serializer.dump(self, self._rw_obj_type, base_path)
 
 
@@ -91,16 +113,35 @@ def load_method(func):
     return loader
 
 
+def int_or_none(value):
+    if value is None:
+        return None
+    return int(value)
+
+
+def int_or_float(value):
+    if isinstance(value, str):
+        if '.' in value:
+            return float(value)
+        return int(value)
+    if isinstance(value, int):
+        return value
+    return float(value)
+
+
+# noinspection PyMethodMayBeStatic
 class TMXSerializer(object):
     def __init__(self):
         import tmxlib
         self.map_class = tmxlib.Map
+        self.template_class = tmxlib.Template
         self.tile_layer_class = tmxlib.TileLayer
         self.object_layer_class = tmxlib.ObjectLayer
         self.image_layer_class = tmxlib.ImageLayer
         self.rectangle_object_class = tmxlib.RectangleObject
         self.ellipse_object_class = tmxlib.EllipseObject
         self.polygon_object_class = tmxlib.PolygonObject
+        self.point_object_class = tmxlib.PointObject
         self.polyline_object_class = tmxlib.PolylineObject
         self.image_class = tmxlib.image.preferred_image_class
 
@@ -119,7 +160,7 @@ class TMXSerializer(object):
         with open(filename, 'rb') as fileobj:
             return fileobj.read()
 
-    def open(self, cls, obj_type, filename, base_path=None, shared=False):
+    def open(self, cls, obj_type, filename, base_path=None, shared=False, options=None):
         if not base_path:
             base_path = os.path.dirname(os.path.abspath(filename))
         if shared:
@@ -128,12 +169,12 @@ class TMXSerializer(object):
                 return self._shared_objects[obj_type, filename]
             except KeyError:
                 self._shared_objects[obj_type, filename] = obj = self.open(
-                        cls, obj_type, filename)
+                    cls, obj_type, filename, options=options)
                 return obj
         return self.load(cls, obj_type, self.load_file(filename),
-                base_path=base_path)
+                         base_path=base_path, options=options)
 
-    def load(self, cls, obj_type, string, base_path=None):
+    def load(self, cls, obj_type, string, base_path=None, options=None):
         if have_lxml:
             tree = etree.XML(string, etree.XMLParser(remove_comments=True))
         else:  # pragma: no cover
@@ -143,14 +184,15 @@ class TMXSerializer(object):
                     if subelem.tag == etree.Comment:
                         elem.remove(subelem)
             strip_comments(tree)
-        return self.from_element(cls, obj_type, tree, base_path=base_path)
+        return self.from_element(cls, obj_type, tree, base_path=base_path, options=options)
 
-    def from_element(self, cls, obj_type, element, base_path=None):
+    def from_element(self, cls, obj_type, element, base_path=None, options=None):
         read_func = getattr(self, obj_type + '_from_element')
-        obj = read_func(cls, element, base_path=base_path)
+        obj = read_func(cls, element, base_path=base_path, options=options)
         obj.serializer = self
         return obj
 
+    # noinspection PyUnusedLocal
     def save(self, obj, obj_type, filename, serializer=None, base_path=None):
         if not base_path:
             base_path = os.path.dirname(os.path.abspath(filename))
@@ -158,13 +200,14 @@ class TMXSerializer(object):
             fileobj.write(self.dump(obj, obj_type, base_path=base_path))
 
     def dump(self, obj, obj_type, base_path=None):
+        # noinspection PyUnusedLocal
         extra_kwargs = {}
         if have_lxml:
             extra_kwargs = dict(pretty_print=True, xml_declaration=True)
         else:  # pragma: no cover
             extra_kwargs = dict()
         return etree.tostring(self.to_element(obj, obj_type, base_path),
-                encoding='UTF-8', **extra_kwargs)
+                              encoding='UTF-8', **extra_kwargs)
 
     def to_element(self, obj, obj_type, base_path=None,
             **kwargs):
@@ -172,26 +215,38 @@ class TMXSerializer(object):
         return write_func(obj, base_path=base_path, **kwargs)
 
     @load_method
-    def map_from_element(self, cls, root, base_path):
+    def map_from_element(self, cls, root, base_path, options):
         assert root.tag == 'map'
-        assert root.attrib.pop('version') == '1.0', 'Bad TMX file version'
+        assert root.attrib.pop('version') in ('1.0', '1.1', '1.2'), 'Bad TMX file version'
 
         background_color = root.attrib.pop('backgroundcolor', None)
         if background_color:
             background_color = from_hexcolor(background_color)
 
         args = dict(
-                size=(int(root.attrib.pop('width')),
-                        int(root.attrib.pop('height'))),
-                tile_size=(int(root.attrib.pop('tilewidth')),
-                        int(root.attrib.pop('tileheight'))),
-                orientation=root.attrib.pop('orientation'),
-                base_path=base_path,
-                background_color=background_color,
-            )
+            size=(int(root.attrib.pop('width')),
+                  int(root.attrib.pop('height'))),
+            tile_size=(int(root.attrib.pop('tilewidth')),
+                       int(root.attrib.pop('tileheight'))),
+            orientation=root.attrib.pop('orientation'),
+            base_path=base_path,
+            background_color=background_color,
+            infinite=True if root.attrib.pop('infinite', '0') == '1' else False,
+            staggeraxis=root.attrib.pop('staggeraxis', None),
+            staggerindex=root.attrib.pop('staggerindex', None),
+            hexsidelength=root.attrib.pop('hexsidelength', None),
+            nextobjectid=int_or_none(root.attrib.pop('nextobjectid', None)),
+            nextlayerid=int_or_none(root.attrib.pop('nextlayerid', None)),
+            tiledversion=root.attrib.pop('tiledversion', None),
+        )
         render_order = root.attrib.pop('renderorder', None)
         if render_order:
             args['render_order'] = render_order
+
+        # compressionlevel is currently undocumented, but I have only ever seen a value of '0'
+        compressionlevel = root.attrib.pop('compressionlevel', '0')
+        assert compressionlevel == '0', "Unsupported compression level %s" % compressionlevel
+
         assert not root.attrib, 'Unexpected map attributes: %s' % root.attrib
         map = cls(**args)
         for elem in root:
@@ -199,18 +254,18 @@ class TMXSerializer(object):
                 map.properties.update(self.read_properties(elem))
             elif elem.tag == 'tileset':
                 tileset = self.tileset_from_element(
-                    self.tileset_class, elem, base_path=base_path)
+                    self.tileset_class, elem, base_path=base_path, options=options)
                 map.tilesets.append(tileset)
                 assert tileset.first_gid(map) == tileset._read_first_gid
             elif elem.tag == 'layer':
                 map.layers.append(self.tile_layer_from_element(
-                        self.tile_layer_class, elem, map))
+                    self.tile_layer_class, elem, map, options=options))
             elif elem.tag == 'objectgroup':
                 map.layers.append(self.object_layer_from_element(
-                        self.object_layer_class, elem, map))
+                    self.object_layer_class, elem, base_path=base_path, map=map, options=options))
             elif elem.tag == 'imagelayer':
                 map.layers.append(self.image_layer_from_element(
-                        self.image_layer_class, elem, map, base_path))
+                    self.image_layer_class, elem, map, base_path, options=options))
             else:
                 raise ValueError('Unknown tag %s' % elem.tag)
         return map
@@ -238,44 +293,67 @@ class TMXSerializer(object):
         return elem
 
     @load_method
-    def tileset_from_element(self, cls, elem, base_path):
+    def tileset_from_element(self, cls, elem, base_path, options):
         source = elem.attrib.pop('source', None)
+        load_source = bool(options["load-tileset-sources"]) if options else True
+
+        # if 'source' is set, then the tileset is not embedded
         if source:
-            # XXX: Return a proxy object?
-            if base_path is None and not os.path.isabs(source):
-                raise ValueError(
-                    'Cannot load external tileset from relative path %s' %
+            # if we should load the source from it's file (default)
+            if load_source:
+                # XXX: Return a proxy object?
+                if base_path is None and not os.path.isabs(source):
+                    raise ValueError(
+                        'Cannot load external tileset from relative path %s' %
                         source)
-            elif base_path:
-                real_source = os.path.join(base_path, source)
+                elif base_path:
+                    real_source = os.path.join(base_path, source)
+                else:
+                    real_source = source
+
+                tileset = self.open(cls, 'tileset', real_source, shared=True)
+                tileset._read_first_gid = int(elem.attrib.pop('firstgid'))
+                tileset.source = source
+
+                assert not elem.attrib, ('Unexpected tileset attributes: %s' % elem.attrib)
+                return tileset
+
+            # otherwise through the options, the user has told us not to load the tileset source
             else:
-                real_source = source
-            first_gid = int(elem.attrib.pop('firstgid'))
-            assert not elem.attrib, (
-                    'Unexpected tileset attributes: %s' % elem.attrib)
-            tileset = self.open(cls, 'tileset', real_source, shared=True)
-            tileset._read_first_gid = first_gid
-            tileset.source = source
-            return tileset
+                tileset = cls(name=source, tile_size=(0, 0))
+                tileset._read_first_gid = int(elem.attrib.pop('firstgid'))
+                for _ in range(tileset._read_first_gid):
+                    tileset.append_image(None)
+                tileset.source = None
+
+                assert not elem.attrib, ('Unexpected tileset attributes: %s' % elem.attrib)
+                return tileset
+
         kwargs = {}
         if any(e.tag == 'image' for e in elem):
             kwargs['margin'] = int(elem.attrib.pop('margin', 0))
             kwargs['spacing'] = int(elem.attrib.pop('spacing', 0))
             kwargs['image'] = None
+        columns = elem.attrib.pop('columns', None)
+        if columns:
+            kwargs['columns'] = int(columns)
         tileset = cls(
-                name=elem.attrib.pop('name'),
-                tile_size=(int(elem.attrib.pop('tilewidth')),
-                    int(elem.attrib.pop('tileheight'))),
-                **kwargs
-            )
+            name=elem.attrib.pop('name'),
+            tile_size=(int(elem.attrib.pop('tilewidth')),
+                       int(elem.attrib.pop('tileheight'))),
+            **kwargs
+        )
         tileset._read_first_gid = int(elem.attrib.pop('firstgid', 0))
-        assert not elem.attrib, (
-                'Unexpected tileset attributes: %s' % elem.attrib)
+        elem.attrib.pop('tilecount', None)
+        elem.attrib.pop('version', '1.0')
+        elem.attrib.pop('tiledversion', None)
+
+        assert not elem.attrib, ('Unexpected tileset attributes: %s' % elem.attrib)
         for subelem in elem:
             if subelem.tag == 'image':
                 assert tileset.image is None
                 tileset.image = self.image_from_element(
-                        self.image_class, subelem, base_path=base_path)
+                    self.image_class, subelem, base_path=base_path, options=options)
             elif subelem.tag == 'terraintypes':
                 for subsubelem in subelem:
                     if subsubelem.tag == 'terrain':
@@ -309,7 +387,7 @@ class TMXSerializer(object):
                     elif subsubelem.tag == 'image':
                         assert id == len(tileset), (id, len(tileset))
                         image = self.image_from_element(
-                            self.image_class, subsubelem, base_path=base_path)
+                            self.image_class, subsubelem, base_path=base_path, options=options)
                         props = tileset.append_image(image)
                     else:
                         raise ValueError('Unknown tag %s' % subsubelem.tag)
@@ -318,6 +396,12 @@ class TMXSerializer(object):
             elif subelem.tag == 'tileoffset':
                 tileset.tile_offset = (
                     int(subelem.attrib['x']), int(subelem.attrib['y']))
+            elif subelem.tag == 'wangsets':
+                # XXX: Not implemented
+                pass
+            elif subelem.tag == 'grid':
+                # XXX: Not implemented
+                pass
             else:
                 raise ValueError('Unknown tag %s' % subelem.tag)
         if tileset.type == 'image' and not tileset.image:
@@ -327,8 +411,8 @@ class TMXSerializer(object):
     def tileset_to_element(self, tileset, base_path, first_gid=None):
         if tileset.source is not None:
             attrib = dict(
-                    source=tileset.source,
-                )
+                source=tileset.source,
+            )
             if first_gid:
                 attrib['firstgid'] = str(first_gid)
             return etree.Element('tileset', attrib=attrib)
@@ -376,7 +460,7 @@ class TMXSerializer(object):
                     tile_elem.attrib['terrain'] = terrains
                     include = True
                 probability = attrs.get('probability')
-                if probability != None:
+                if probability is not None:
                     tile_elem.attrib['probability'] = str(probability)
                     include = True
                 if include:
@@ -385,7 +469,7 @@ class TMXSerializer(object):
             return element
 
     @load_method
-    def image_from_element(self, cls, elem, base_path):
+    def image_from_element(self, cls, elem, base_path, options):
         kwargs = dict()
         trans = elem.attrib.pop('trans', None)
         if trans:
@@ -416,12 +500,15 @@ class TMXSerializer(object):
         return element
 
     @load_method
-    def tile_layer_from_element(self, cls, elem, map):
-        layer = cls(map, elem.attrib.pop('name'),
-                opacity=float(elem.attrib.pop('opacity', 1)),
-                visible=bool(int(elem.attrib.pop('visible', 1))))
+    def tile_layer_from_element(self, cls, elem, map, options):
+        layer = cls(
+            map, elem.attrib.pop('name'),
+            opacity=float(elem.attrib.pop('opacity', 1)),
+            visible=bool(int(elem.attrib.pop('visible', 1))),
+            id=int_or_none(elem.attrib.pop('id', None)),
+        )
         layer_size = (int(elem.attrib.pop('width')),
-                int(elem.attrib.pop('height')))
+                      int(elem.attrib.pop('height')))
         assert layer_size == map.size
         assert not elem.attrib, (
             'Unexpected tile layer attributes: %s' % elem.attrib)
@@ -436,6 +523,9 @@ class TMXSerializer(object):
                 if encoding == 'base64':
                     data = base64.b64decode(data)
                     layer.encoding = 'base64'
+                elif encoding == 'csv':
+                    # Handled below
+                    pass
                 else:
                     raise ValueError('Bad encoding %s' % encoding)
                 compression = subelem.attrib.pop('compression', None)
@@ -453,13 +543,20 @@ class TMXSerializer(object):
                                 'Bad compression %s' % compression)
                 else:
                     layer.compression = None
-                layer.data = array.array('L', [(
-                            ord_(a) +
-                            (ord_(b) << 8) +
-                            (ord_(c) << 16) +
-                            (ord_(d) << 24)) for
-                        a, b, c, d in
-                        zip(*(data[x::4] for x in range(4)))])
+                if encoding == 'csv':
+                    result = []
+                    for line in csv.reader(data.decode().splitlines()):
+                        result.append(int(i) for i in line)
+                    layer.data = result
+                    layer.encoding = 'csv'
+                else:
+                    layer.data = array.array('L', [(
+                                ord_(a) +
+                                (ord_(b) << 8) +
+                                (ord_(c) << 16) +
+                                (ord_(d) << 24)) for
+                            a, b, c, d in
+                            zip(*(data[x::4] for x in range(4)))])
                 data_set = True
             else:
                 raise ValueError('Unknown tag %s' % subelem.tag)
@@ -496,6 +593,7 @@ class TMXSerializer(object):
         compression = getattr(layer, 'compression', 'zlib')
         encoding = getattr(layer, 'encoding', 'base64')
         extra_attrib = {}
+
         if compression:
             extra_attrib['compression'] = compression
         if encoding:
@@ -516,77 +614,46 @@ class TMXSerializer(object):
             extra_attrib['compression'] = 'zlib'
         elif compression:
             raise ValueError('Bad compression: %s', compression)
+
         if encoding == 'base64':
             data = base64.b64encode(data)
             extra_attrib['encoding'] = 'base64'
         else:
             raise ValueError('Bad encoding: %s', encoding)
+
         data_elem = etree.Element('data', attrib=extra_attrib)
         if six.PY3:  # pragma: no cover
             # etree only deals with (unicode) strings
             data = data.decode('ascii')
+
         data_elem.text = data
         element.append(data_elem)
         return element
 
     @load_method
-    def object_layer_from_element(self, cls, elem, map):
+    def object_layer_from_element(self, cls, elem, base_path, map, options):
         color = elem.attrib.pop('color', None)
         if color:
             color = from_hexcolor(color)
-        layer = cls(map, elem.attrib.pop('name'),
-                opacity=float(elem.attrib.pop('opacity', 1)),
-                visible=bool(int(elem.attrib.pop('visible', 1))),
-                color=color)
-        layer_size = (int(elem.attrib.pop('width')),
-                int(elem.attrib.pop('height')))
-        assert layer_size == map.size
-        assert not elem.attrib, (
-            'Unexpected object layer attributes: %s' % elem.attrib)
+        layer = cls(
+            map, elem.attrib.pop('name'),
+            opacity=float(elem.attrib.pop('opacity', 1)),
+            visible=bool(int(elem.attrib.pop('visible', 1))),
+            color=color,
+            id=int_or_none(elem.attrib.pop('id', None))
+        )
+        if 'width' in elem.attrib:
+            layer_size = (int(elem.attrib.pop('width')),
+                          int(elem.attrib.pop('height')))
+            assert layer_size == map.size
+
+        assert not elem.attrib, ('Unexpected object layer attributes: %s' % elem.attrib)
         for subelem in elem:
             if subelem.tag == 'properties':
                 layer.properties.update(self.read_properties(subelem))
             elif subelem.tag == 'object':
-                kwargs = dict(
-                        layer=layer,
-                    )
-                x = int(subelem.attrib.pop('x'))
-                y = int(subelem.attrib.pop('y'))
-
-                def put(attr_type, attr_name, arg_name):
-                    attr = subelem.attrib.pop(attr_name, None)
-                    if attr is not None:
-                        kwargs[arg_name] = attr_type(attr)
-
-                put(int, 'gid', 'value')
-                put(six.text_type, 'name', 'name')
-                put(six.text_type, 'type', 'type')
-                width = int(subelem.attrib.pop('width', 0))
-                height = int(subelem.attrib.pop('height', 0))
-                if width or height:
-                    kwargs['pixel_size'] = int(width), int(height)
-                if not kwargs.get('value'):
-                    y += height
-                kwargs['pixel_pos'] = x, y
-                assert not subelem.attrib, (
-                    'Unexpected object attributes: %s' % subelem.attrib)
-                properties = {}
-                cls = self.rectangle_object_class
-                for subsubelem in subelem:
-                    if subsubelem.tag == 'properties':
-                        properties.update(self.read_properties(subsubelem))
-                    elif subsubelem.tag == 'ellipse':
-                        cls = self.ellipse_object_class
-                    elif subsubelem.tag == 'polygon':
-                        cls = self.polygon_object_class
-                        kwargs['points'] = [[int(x) for x in p.split(',')]
-                            for p in subsubelem.attrib['points'].split()]
-                    elif subsubelem.tag == 'polyline':
-                        cls = self.polyline_object_class
-                        kwargs['points'] = [[int(x) for x in p.split(',')]
-                            for p in subsubelem.attrib['points'].split()]
-                obj = cls(**kwargs)
-                obj.properties.update(properties)
+                obj = self.map_object_from_element(self.rectangle_object_class, subelem, base_path=base_path, map=map,
+                                                   layer=layer, options=options)
                 layer.append(obj)
             else:
                 raise ValueError('Unknown tag %s' % subelem.tag)
@@ -594,10 +661,10 @@ class TMXSerializer(object):
 
     def object_layer_to_element(self, layer):
         element = etree.Element('objectgroup', attrib=dict(
-                name=layer.name,
-                width=str(layer.map.width),
-                height=str(layer.map.height),
-            ))
+            name=layer.name,
+            width=str(layer.map.width),
+            height=str(layer.map.height),
+        ))
         if not layer.visible:
             element.attrib['visible'] = '0'
         if layer.opacity != 1:
@@ -607,40 +674,151 @@ class TMXSerializer(object):
 
         self.append_properties(element, layer.properties)
 
+        # noinspection PyShadowingBuiltins
         for object in layer:
-            attrib = dict(x=str(object.pixel_x), y=str(object.pixel_y))
-            if object.name:
-                attrib['name'] = str(object.name)
-            if object.type:
-                attrib['type'] = str(object.type)
-            if object.objtype in ('rectangle', 'ellipse'):
-                attrib['y'] = str(object.pixel_y - object.pixel_height)
-                attrib['width'] = str(object.pixel_width)
-                attrib['height'] = str(object.pixel_height)
-            else:
-                attrib['y'] = str(object.pixel_y)
-            if object.objtype == 'tile':
-                attrib['gid'] = str(object.value)
-            obj_element = etree.Element('object', attrib=attrib)
-            self.append_properties(obj_element, object.properties)
-            if object.objtype == 'ellipse':
-                obj_element.append(etree.Element('ellipse'))
-            elif object.objtype in ('polyline', 'polygon'):
-                obj_element.append(etree.Element(object.objtype, attrib={
-                    'points':
-                        ' '.join('{0},{1}'.format(*p) for p in object.points),
-                }))
-            element.append(obj_element)
+            element.append(self.map_object_to_element(object))
 
         return element
 
     @load_method
-    def image_layer_from_element(self, cls, elem, map, base_path):
-        layer = cls(map, elem.attrib.pop('name'),
-                opacity=float(elem.attrib.pop('opacity', 1)),
-                visible=bool(int(elem.attrib.pop('visible', 1))))
+    def map_object_from_element(self, cls, elem, base_path, map, layer, options):
+        kwargs = dict(
+            layer=layer,
+        )
+        x = int_or_float(elem.attrib.pop('x', 0))
+        y = int_or_float(elem.attrib.pop('y', 0))
+
+        def put(attr_type, attr_name, arg_name):
+            attr = elem.attrib.pop(attr_name, None)
+            if attr is not None:
+                kwargs[arg_name] = attr_type(attr)
+
+        put(int, 'gid', 'value')
+        put(six.text_type, 'name', 'name')
+        put(six.text_type, 'type', 'type')
+        width = int_or_float(elem.attrib.pop('width', 0))
+        height = int_or_float(elem.attrib.pop('height', 0))
+        template = elem.attrib.pop('template', None)
+
+        if width or height:
+            kwargs['pixel_size'] = (width, height)
+        if not kwargs.get('value'):
+            y += height
+        kwargs['pixel_pos'] = x, y
+        if 'id' in elem.attrib:
+            kwargs['id'] = int(elem.attrib.pop('id'))
+
+        assert not elem.attrib, (
+                'Unexpected object attributes: %s' % elem.attrib)
+        properties = {}
+        # cls = self.rectangle_object_class
+        for subelem in elem:
+            if subelem.tag == 'properties':
+                properties.update(self.read_properties(subelem))
+            elif subelem.tag == 'ellipse':
+                cls = self.ellipse_object_class
+            elif subelem.tag == 'polygon':
+                cls = self.polygon_object_class
+                kwargs['points'] = [[int_or_float(x) for x in p.split(',')]
+                                    for p in subelem.attrib['points'].split()]
+            elif subelem.tag == 'polyline':
+                cls = self.polyline_object_class
+                kwargs['points'] = [[int_or_float(x) for x in p.split(',')]
+                                    for p in subelem.attrib['points'].split()]
+
+        if template is not None and False:
+            # XXX: Return a proxy object?
+            if base_path is None and not os.path.isabs(template):
+                raise ValueError('Cannot load external template from relative path %s' % template)
+            elif base_path:
+                real_template = os.path.join(base_path, template)
+            else:
+                real_template = template
+
+            tmp = self.open(self.template_class, 'template', real_template, shared=True)
+            obj = copy.deepcopy(tmp.object)
+            obj.properties.update(properties)
+            obj.template = template
+            obj.layer = layer
+
+        else:
+            obj = cls(**kwargs)
+            obj.properties.update(properties)
+            obj.template = None
+
+        return obj
+
+    # noinspection PyShadowingBuiltins
+    def map_object_to_element(self, object):
+        attrib = dict(x="%g" % object.pixel_x, y='%g' % object.pixel_y)
+        if object.name:
+            attrib['name'] = '%s' % object.name
+        if object.type:
+            attrib['type'] = '%s' % object.type
+        if object.objtype in ('rectangle', 'ellipse'):
+            attrib['y'] = '%g' % (object.pixel_y - object.pixel_height)
+            attrib['width'] = '%g' % object.pixel_width
+            attrib['height'] = '%g' % object.pixel_height
+        else:
+            attrib['y'] = '%g' % object.pixel_y
+        if object.objtype == 'tile':
+            attrib['gid'] = str(object.value)
+
+        if object.template:
+            attrib['template'] = object.template
+        obj_element = etree.Element('object', attrib=attrib)
+        self.append_properties(obj_element, object.properties)
+        if object.objtype == 'ellipse':
+            obj_element.append(etree.Element('ellipse'))
+        elif object.objtype in ('polyline', 'polygon'):
+            obj_element.append(etree.Element(object.objtype, attrib={
+                'points':
+                    ' '.join('{0:g},{1:g}'.format(*p) for p in object.points),
+            }))
+
+        return obj_element
+
+    @load_method
+    def template_from_element(self, cls, root, base_path, options):
+        assert root.tag == 'template'
+
+        assert not root.attrib, 'Unexpected template attributes: %s' % root.attrib
+        template = cls()
+        for elem in root:
+            if elem.tag == 'tileset':
+                assert template.tileset is None, "Templates may only have a single tileset"
+                tileset = self.tileset_from_element(
+                    self.tileset_class, elem, base_path=base_path, options=options)
+                template.tileset = tileset
+
+            elif elem.tag == 'object':
+                assert template.object is None, "Templates may only contain a single object"
+                template.object = (self.map_object_from_element(
+                    self.rectangle_object_class, elem, base_path=base_path, map=None, layer=None, options=options))
+            else:
+                raise ValueError('Unknown tag %s' % elem.tag)
+        return template
+
+    def template_to_element(self, template, base_path):
+        elem = etree.Element('template')
+
+        if template.tileset is not None:
+            elem.append(self.tileset_to_element(template.tileset, base_path=base_path, first_gid=None))
+
+        if template.object is not None:
+            elem.append(self.map_object_to_element(template.object))
+        return elem
+
+    @load_method
+    def image_layer_from_element(self, cls, elem, map, base_path, options):
+        layer = cls(
+            map, elem.attrib.pop('name'),
+            opacity=float(elem.attrib.pop('opacity', 1)),
+            visible=bool(int(elem.attrib.pop('visible', 1))),
+            id=int_or_none(elem.attrib.pop('id', None)),
+        )
         layer_size = (int(elem.attrib.pop('width')),
-                int(elem.attrib.pop('height')))
+                      int(elem.attrib.pop('height')))
         assert layer_size == map.size
         assert not elem.attrib, (
             'Unexpected tile layer attributes: %s' % elem.attrib)
@@ -649,7 +827,7 @@ class TMXSerializer(object):
                 layer.properties.update(self.read_properties(subelem))
             elif subelem.tag == 'image':
                 layer.image = self.image_from_element(
-                    self.image_class, subelem, base_path)
+                    self.image_class, subelem, base_path, options=options)
             else:
                 raise ValueError('Unknown element: %s', subelem.tag)
         return layer
@@ -680,7 +858,16 @@ class TMXSerializer(object):
         for prop in elem:
             assert prop.tag == 'property'
             name = prop.attrib.pop('name')
-            value = prop.attrib.pop('value')
+            prop_type = prop.attrib.pop('type', 'string')
+            type = prop.attrib.pop('type', 'string')
+            if type == 'bool':
+                value = True if prop.attrib.pop('value') == 'true' else False
+            elif type == 'int':
+                value = int(prop.attrib.pop('value'))
+            elif type == 'float':
+                value = float(prop.attrib.pop('value'))
+            else:
+                value = prop.attrib.pop('value')
             properties[name] = value
             assert not prop.attrib, (
                     'Unexpected property attributes: %s' % prop.attrib)
@@ -695,6 +882,7 @@ class TMXSerializer(object):
                         value=value,
                     )))
             parent.append(element)
+
 
 def from_hexcolor(string):
     if string.startswith('#'):
