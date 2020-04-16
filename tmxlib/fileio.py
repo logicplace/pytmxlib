@@ -652,7 +652,7 @@ class TMXSerializer(object):
             if subelem.tag == 'properties':
                 layer.properties.update(self.read_properties(subelem))
             elif subelem.tag == 'object':
-                obj = self.map_object_from_element(self.rectangle_object_class, subelem, base_path=base_path, map=map,
+                obj = self.map_object_from_element(self.point_object_class, subelem, base_path=base_path, map=map,
                                                    layer=layer, options=options)
                 layer.append(obj)
             else:

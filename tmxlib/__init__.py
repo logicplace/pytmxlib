@@ -7,6 +7,7 @@ from __future__ import division
 
 from tmxlib.helpers import UsedTilesetError, TilesetNotInMapError
 from tmxlib.map import Map
+from tmxlib.template import Template
 from tmxlib.tileset import ImageTileset, IndividualTileTileset, TilesetTile
 from tmxlib.tile import MapTile
 from tmxlib.layer import ImageLayer, ObjectLayer, TileLayer

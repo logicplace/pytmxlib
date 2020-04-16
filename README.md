@@ -1,7 +1,3 @@
-[![Build Status](https://secure.travis-ci.org/encukou/pytmxlib.png?branch=master)](http://travis-ci.org/encukou/pytmxlib)
-[![Coverage Status](https://coveralls.io/repos/encukou/pytmxlib/badge.png?branch=tests)](https://coveralls.io/r/encukou/pytmxlib?branch=tests)
-[![PyPI](https://img.shields.io/pypi/v/tmxlib.svg)](https://pypi.org/project/tmxlib/)
-
 tmxlib
 ======
 
@@ -15,6 +11,3 @@ Documentation may be found at https://pytmxlib.readthedocs.org
 
 
 For the Tiled editor, see http://www.mapeditor.org/
-
-For a Python map loader (with which you can render maps in a game), see
-    http://code.google.com/p/pytmxloader/.
