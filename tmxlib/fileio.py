@@ -652,7 +652,7 @@ class TMXSerializer(object):
             if subelem.tag == 'properties':
                 layer.properties.update(self.read_properties(subelem))
             elif subelem.tag == 'object':
-                obj = self.map_object_from_element(self.point_object_class, subelem, base_path=base_path, map=map,
+                obj = self.map_object_from_element(self.rectangle_object_class, subelem, base_path=base_path, map=map,
                                                    layer=layer, options=options)
                 layer.append(obj)
             else:
@@ -717,6 +717,8 @@ class TMXSerializer(object):
                 properties.update(self.read_properties(subelem))
             elif subelem.tag == 'ellipse':
                 cls = self.ellipse_object_class
+            elif subelem.tag == 'point':
+                cls = self.point_object_class
             elif subelem.tag == 'polygon':
                 cls = self.polygon_object_class
                 kwargs['points'] = [[int_or_float(x) for x in p.split(',')]
@@ -770,6 +772,8 @@ class TMXSerializer(object):
         self.append_properties(obj_element, object.properties)
         if object.objtype == 'ellipse':
             obj_element.append(etree.Element('ellipse'))
+        elif object.objtype == 'point':
+            obj_element.append(etree.Element('point'))
         elif object.objtype in ('polyline', 'polygon'):
             obj_element.append(etree.Element(object.objtype, attrib={
                 'points':
