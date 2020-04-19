@@ -779,7 +779,6 @@ class TMXSerializer(object):
                 'points':
                     ' '.join('{0:g},{1:g}'.format(*p) for p in object.points),
             }))
-
         return obj_element
 
     @load_method
@@ -881,10 +880,20 @@ class TMXSerializer(object):
         if props:
             element = etree.Element('properties')
             for key, value in props.items():
-                element.append(etree.Element('property', attrib=dict(
-                        name=key,
-                        value=value,
-                    )))
+                attributes = dict(
+                    name=key,
+                    value=value,
+                )
+                
+                if isinstance(value, int):
+                    attributes['type'] = 'int'
+                    attributes['value'] = str(value)
+                
+                if isinstance(value, float):
+                    attributes['type'] = 'float'
+                    attributes['value'] = str(value)
+                    
+                element.append(etree.Element('property', attrib=attributes))
             parent.append(element)
 
 
