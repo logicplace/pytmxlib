@@ -479,7 +479,7 @@ class TMXSerializer(object):
         if width is not None:
             kwargs['size'] = int(width), int(height)
         image = cls(
-                source=elem.attrib.pop('source'),
+                source=os.path.join(base_path, elem.attrib.pop('source')),
                 **kwargs)
         image.base_path = base_path
         assert not elem.attrib, (
@@ -487,7 +487,10 @@ class TMXSerializer(object):
         return image
 
     def image_to_element(self, image, base_path):
-        element = etree.Element('image', attrib=dict(source=image.source))
+        source = os.path.abspath(image.source)
+        abs_base = os.path.abspath(base_path)
+        rel_source = source.replace(abs_base, "", 1).lstrip(os.path.sep)
+        element = etree.Element('image', attrib=dict(source=rel_source))
         try:
             if image.height:
                 element.attrib['height'] = str(image.height)
