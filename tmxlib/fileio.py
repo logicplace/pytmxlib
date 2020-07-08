@@ -131,8 +131,9 @@ def int_or_float(value):
 
 # noinspection PyMethodMayBeStatic
 class TMXSerializer(object):
-    def __init__(self):
+    def __init__(self, version=(1, 0)):
         import tmxlib
+        self.version = version
         self.map_class = tmxlib.Map
         self.template_class = tmxlib.Template
         self.tile_layer_class = tmxlib.TileLayer
@@ -217,7 +218,7 @@ class TMXSerializer(object):
     @load_method
     def map_from_element(self, cls, root, base_path, options):
         assert root.tag == 'map'
-        assert root.attrib.pop('version') in ('1.0', '1.1', '1.2'), 'Bad TMX file version'
+        assert root.attrib.pop('version') in ('1.0', '1.1', '1.2', '1.3', '1.4'), 'Bad TMX file version'
 
         background_color = root.attrib.pop('backgroundcolor', None)
         if background_color:
@@ -272,7 +273,7 @@ class TMXSerializer(object):
 
     def map_to_element(self, map, base_path):
         elem = etree.Element('map', attrib=dict(
-                version='1.0',
+                version='%i.%i' % self.version,
                 orientation=map.orientation,
                 width=str(map.width),
                 height=str(map.height),
@@ -288,8 +289,10 @@ class TMXSerializer(object):
         for tileset in map.tilesets:
             elem.append(self.tileset_to_element(tileset,
                     base_path=base_path, first_gid=tileset.first_gid(map)))
-        for layer in map.layers:
-            elem.append(self.layer_to_element(layer, base_path))
+
+        # Don't know why but reversing it is required... (Tiled 1.4)
+        for i, layer in reversed(list(enumerate(map.layers))):
+            elem.append(self.layer_to_element(layer, base_path, idx=i+1))
         return elem
 
     @load_method
@@ -566,17 +569,17 @@ class TMXSerializer(object):
         assert data_set
         return layer
 
-    def layer_to_element(self, layer, base_path):
+    def layer_to_element(self, layer, base_path, idx=None):
         if layer.type == 'objects':
-            return self.object_layer_to_element(layer)
+            return self.object_layer_to_element(layer, idx=idx)
         elif layer.type == 'tiles':
-            return self.tile_layer_to_element(layer)
+            return self.tile_layer_to_element(layer, idx=idx)
         elif layer.type == 'image':
-            return self.image_layer_to_element(layer, base_path)
+            return self.image_layer_to_element(layer, base_path, idx=idx)
         else:
             raise ValueError(layer.type)
 
-    def tile_layer_to_element(self, layer):
+    def tile_layer_to_element(self, layer, idx=None):
         element = etree.Element('layer', attrib=dict(
                 name=layer.name,
                 width=str(layer.map.width),
@@ -586,6 +589,9 @@ class TMXSerializer(object):
             element.attrib['visible'] = '0'
         if layer.opacity != 1:
             element.attrib['opacity'] = str(round(layer.opacity, 5))
+        
+        if self.version >= (1, 1) and idx is not None:
+            element.attrib['id'] = str(idx)
 
         self.append_properties(element, layer.properties)
 
@@ -662,7 +668,7 @@ class TMXSerializer(object):
                 raise ValueError('Unknown tag %s' % subelem.tag)
         return layer
 
-    def object_layer_to_element(self, layer):
+    def object_layer_to_element(self, layer, idx=None):
         element = etree.Element('objectgroup', attrib=dict(
             name=layer.name,
             width=str(layer.map.width),
@@ -674,6 +680,9 @@ class TMXSerializer(object):
             element.attrib['opacity'] = str(round(layer.opacity, 5))
         if layer.color:
             element.attrib['color'] = '#' + to_hexcolor(layer.color)
+        
+        if self.version >= (1, 1) and idx is not None:
+            element.attrib['id'] = str(idx)
 
         self.append_properties(element, layer.properties)
 
@@ -838,7 +847,7 @@ class TMXSerializer(object):
                 raise ValueError('Unknown element: %s', subelem.tag)
         return layer
 
-    def image_layer_to_element(self, layer, base_path):
+    def image_layer_to_element(self, layer, base_path, idx=None):
         element = etree.Element('imagelayer', attrib=dict(
                 name=layer.name,
                 width=str(layer.map.width),
@@ -848,6 +857,9 @@ class TMXSerializer(object):
             element.attrib['visible'] = '0'
         if layer.opacity != 1:
             element.attrib['opacity'] = str(round(layer.opacity, 5))
+        
+        if self.version >= (1, 1) and idx is not None:
+            element.attrib['id'] = str(idx)
 
         image = self.image_to_element(layer.image, base_path)
         element.append(image)
