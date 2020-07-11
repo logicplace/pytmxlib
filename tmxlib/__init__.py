@@ -17,7 +17,7 @@ from tmxlib import image
 from tmxlib import draw
 
 
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 __copyright__ = "Copyright 2011, Petr Viktorin"
 __author__ = 'Petr Viktorin'

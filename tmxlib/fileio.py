@@ -241,8 +241,12 @@ class TMXSerializer(object):
             tiledversion=root.attrib.pop('tiledversion', None),
         )
         render_order = root.attrib.pop('renderorder', None)
+        nextobjectid = root.attrib.pop('nextobjectid', None)
         if render_order:
             args['render_order'] = render_order
+        hex_side_length = root.attrib.pop('hexsidelength', None)
+        if hex_side_length:
+            args['hex_side_length'] = int(hex_side_length)
 
         # compressionlevel is currently undocumented, but I have only ever seen a value of '0'
         compressionlevel = root.attrib.pop('compressionlevel', '0')
@@ -285,6 +289,13 @@ class TMXSerializer(object):
                 to_hexcolor(map.background_color))
         if map.render_order:
             elem.attrib['renderorder'] = map.render_order
+``
+        if map.stagger_index:
+            elem.attrib['staggerindex'] = map.staggerindex
+        if map.stagger_axis:
+            elem.attrib['staggeraxis'] = map.staggeraxis
+        if map.hex_side_length is not None:
+            elem.attrib['hexsidelength'] = str(map.hexsidelength)
         self.append_properties(elem, map.properties)
         for tileset in map.tilesets:
             elem.append(self.tileset_to_element(tileset,

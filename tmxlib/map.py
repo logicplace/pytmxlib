@@ -34,12 +34,20 @@ class Map(fileio.ReadWriteBase, helpers.SizeMixin):
 
         .. attribute:: infinite
         .. attribute:: staggeraxis
+
+            Stagger axis for hexagonal maps ('x' or 'y', or None)
+
         .. attribute:: staggerindex
+
+            Stagger index for hexagonal maps ('odd' or 'even', or None)
+
         .. attribute:: infinite
         .. attribute:: nextobjectid
         .. attribute:: nextlayerid
         .. attribute:: tiledversion
         .. attribute:: hexsidelength
+
+            Side length for hexagonal maps (int, or None)
 
     Other attributes:
 
