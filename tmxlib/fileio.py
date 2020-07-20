@@ -289,20 +289,18 @@ class TMXSerializer(object):
                 to_hexcolor(map.background_color))
         if map.render_order:
             elem.attrib['renderorder'] = map.render_order
-``
-        if map.stagger_index:
+        if map.staggerindex:
             elem.attrib['staggerindex'] = map.staggerindex
-        if map.stagger_axis:
+        if map.staggeraxis:
             elem.attrib['staggeraxis'] = map.staggeraxis
-        if map.hex_side_length is not None:
+        if map.hexsidelength is not None:
             elem.attrib['hexsidelength'] = str(map.hexsidelength)
         self.append_properties(elem, map.properties)
         for tileset in map.tilesets:
             elem.append(self.tileset_to_element(tileset,
                     base_path=base_path, first_gid=tileset.first_gid(map)))
 
-        # Don't know why but reversing it is required... (Tiled 1.4)
-        for i, layer in reversed(list(enumerate(map.layers))):
+        for i, layer in list(enumerate(map.layers)):
             elem.append(self.layer_to_element(layer, base_path, idx=i+1))
         return elem
 

@@ -134,7 +134,7 @@ class Map(fileio.ReadWriteBase, helpers.SizeMixin):
         else:
             return last_tileset.end_gid(self)
 
-    def add_layer(self, name, before=None, after=None, layer_class=None):
+    def add_layer(self, name, before=None, after=None, layer_class=None, **kwargs):
         """Add an empty layer with the given name to the map.
 
         By default, the new layer is added at the end of the layer list.
@@ -145,7 +145,7 @@ class Map(fileio.ReadWriteBase, helpers.SizeMixin):
         """
         if not layer_class:
             layer_class = layer.TileLayer
-        new_layer = layer_class(self, name)
+        new_layer = layer_class(self, name, **kwargs)
         if after is not None:
             if before is not None:
                 raise ValueError("Can't specify both before and after")
@@ -156,28 +156,28 @@ class Map(fileio.ReadWriteBase, helpers.SizeMixin):
             self.layers.append(new_layer)
         return new_layer
 
-    def add_tile_layer(self, name, before=None, after=None):
+    def add_tile_layer(self, name, before=None, after=None, **kwargs):
         """Add an empty tile layer with the given name to the map.
 
         See add_layer
         """
-        return self.add_layer(name, before, after, layer_class=layer.TileLayer)
+        return self.add_layer(name, before, after, layer_class=layer.TileLayer, **kwargs)
 
-    def add_object_layer(self, name, before=None, after=None):
+    def add_object_layer(self, name, before=None, after=None, **kwargs):
         """Add an empty object layer with the given name to the map.
 
         See add_layer
         """
         return self.add_layer(
-            name, before, after, layer_class=layer.ObjectLayer)
+            name, before, after, layer_class=layer.ObjectLayer, **kwargs)
 
-    def add_image_layer(self, name, image, before=None, after=None):
+    def add_image_layer(self, name, image, before=None, after=None, **kwargs):
         """Add an image layer with the given name and image to the map.
 
         See add_layer
         """
         new_layer = self.add_layer(
-            name, before, after, layer_class=layer.ImageLayer)
+            name, before, after, layer_class=layer.ImageLayer, **kwargs)
         new_layer.image = image
         return new_layer
 
